@@ -27,6 +27,17 @@ function decodeBencode(bencodedValue) {
       rest = rest.slice(length);
     }
     return [list, bencodedValue.length - rest.length + 1];
+  } else if (bencodedValue[0] == 'd'){
+    const dict = {}
+    let rest = bencodedValue.slice(1);
+    while (rest[0] != "e"){
+      const [key,len1] = decodeBencode(rest);
+      rest = rest.slice(len1);
+      const [value,len2] = decodeBencode(rest);
+      rest = rest.slice(len2);
+      dict[key] = value;
+    }
+    return [dict, bencodedValue.length - rest.length +1 ];
   } else {
     throw new Error("Invalid encoded value");
   }
