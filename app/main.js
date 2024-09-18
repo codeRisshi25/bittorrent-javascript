@@ -6,17 +6,29 @@ const util = require("util");
 // - decodeBencode("10:hello12345") -> "hello12345"
 // - decodeBencode("i12345e") -> 12345
 function decodeBencode(bencodedValue) {
-  // Check if the first character is a digit
   if (!isNaN(bencodedValue[0])) {
     const firstColonIndex = bencodedValue.indexOf(":");
     if (firstColonIndex === -1) {
       throw new Error("Invalid encoded value");
     }
-    return "\"" + bencodedValue.substr(firstColonIndex + 1) + "\"";
+    const strLen = parseInt(bencodedValue.slice(0, firstColonIndex), 10);
+    const strValue = bencodedValue.substr(firstColonIndex + 1, strLen);
+    return [strValue, firstColonIndex + 1 + strLen];
   } else if (bencodedValue[0] === "i") {
-    return  bencodedValue.substr(1, bencodedValue.length - 2);
+    const firstEIndex = bencodedValue.indexOf("e");
+    const intValue = parseInt(bencodedValue.slice(1, firstEIndex), 10);
+    return [intValue, firstEIndex + 1];
+  } else if (bencodedValue[0] === "l") {
+    const list = [];
+    let rest = bencodedValue.slice(1);
+    while (rest[0] !== "e") {
+      const [element, length] = decodeBencode(rest);
+      list.push(element);
+      rest = rest.slice(length);
+    }
+    return [list, bencodedValue.length - rest.length + 1];
   } else {
-    throw new Error("Only strings are supported at the moment");
+    throw new Error("Invalid encoded value");
   }
 }
 
@@ -24,7 +36,8 @@ function main() {
   const command = process.argv[2];
   if (command === "decode") {
     const bencodedValue = process.argv[3];
-    console.log(decodeBencode(bencodedValue));
+    const [decodedValue] = decodeBencode(bencodedValue);
+    console.log(JSON.stringify(decodedValue));
   } else {
     throw new Error(`Unknown command ${command}`);
   }
