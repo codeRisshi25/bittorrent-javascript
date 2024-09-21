@@ -1,62 +1,82 @@
 const process = require("process");
-const util = require("util");
 const fs = require('fs');
+const crypto = require('crypto');
+const encode = require('./encode');
 
-// Examples:
-// - decodeBencode("5:hello") -> "hello"
-// - decodeBencode("10:hello12345") -> "hello12345"
-// - decodeBencode("i12345e") -> 12345
-function decodeBencode(bencodedValue) {
-  if (!isNaN(bencodedValue[0])) {
-    const firstColonIndex = bencodedValue.indexOf(":");
-    if (firstColonIndex === -1) {
-      throw new Error("Invalid encoded value");
+
+//! function to decode the BenCoded Value
+
+function decodeBencode(bencodedValue, needString = false) {
+  let position = 0;
+  function parse() {
+    const data = bencodedValue.slice(position);
+    const dataStr = data.toString();
+    const type = dataStr[0];
+    // Check if the first character is a digit
+    if (!isNaN(type)) {
+      const firstColonIndex = dataStr.indexOf(":");
+      if (firstColonIndex === -1) {
+        throw new Error("Invalid encoded value");
+      }
+      const len = parseInt(data.slice(0, firstColonIndex).toString(), 10);      
+      const value = data.slice(firstColonIndex + 1, firstColonIndex + 1 + len);
+      position += firstColonIndex + len + 1;
+      return needString ? value.toString() : value;
+    } else if (type == "i") {
+      const end = dataStr.indexOf("e");
+      const value = parseInt(data.slice(1, end), 10);
+      position += end + 1;
+      return value;
+    } else if (type == "l") {
+      const value = [];
+      position++;
+      while (bencodedValue[position] !== 101) {
+        value.push(parse());
+      }
+      position++;
+      return value;
+    } else if (type == "d") {
+      const value = {};
+      position++;
+      while (bencodedValue[position] !== 101) {
+        const key = parse();
+        const val = parse();
+        value[key] = val;
+      }
+      position++;
+      return value;
+    } else {
+      throw new Error("Strange type:" + type + " in " + dataStr);
     }
-    const strLen = parseInt(bencodedValue.slice(0, firstColonIndex), 10);
-    const strValue = bencodedValue.substr(firstColonIndex + 1, strLen);
-    return [strValue, firstColonIndex + 1 + strLen];
-  } else if (bencodedValue[0] === "i") {
-    const firstEIndex = bencodedValue.indexOf("e");
-    const intValue = parseInt(bencodedValue.slice(1, firstEIndex), 10);
-    return [intValue, firstEIndex + 1];
-  } else if (bencodedValue[0] === "l") {
-    const list = [];
-    let rest = bencodedValue.slice(1);
-    while (rest[0] !== "e") {
-      const [element, length] = decodeBencode(rest);
-      list.push(element);
-      rest = rest.slice(length);
-    }
-    return [list, bencodedValue.length - rest.length + 1];
-  } else if (bencodedValue[0] == 'd'){
-    const dict = {}
-    let rest = bencodedValue.slice(1);
-    while (rest[0] != "e"){
-      const [key,len1] = decodeBencode(rest);
-      rest = rest.slice(len1);
-      const [value,len2] = decodeBencode(rest);
-      rest = rest.slice(len2);
-      dict[key] = value;
-    }
-    return [dict, bencodedValue.length - rest.length +1 ];
-  } else {
-    throw new Error("Invalid encoded value");
   }
+  return parse(bencodedValue);
 }
 
+function torrentInfo(filename){
+  const content = fs.readFileSync(filename);
+  const decoded = decodeBencode(content);
+  return decoded;
+}
+
+
+//! main function 
 function main() {
   const command = process.argv[2];
   if (command === "decode") {
     const bencodedValue = process.argv[3];
-    const [decodedValue] = decodeBencode(bencodedValue);
-    console.log(JSON.stringify(decodedValue));
-  } else if (command == "info"){
-    const file = process.argv[3];
-    const data = fs.readFileSync(file);
-    const [decodedValue] = decodeBencode(data.toString('binary'));
-    const {announce, info} = decodedValue;
-    process.stdout.write(`Tracker URL: ${announce}\nLength: ${info.length}`);
-  }else {
+    // In JavaScript, there's no need to manually convert bytes to string for printing
+    // because JS doesn't distinguish between bytes and strings in the same way Python does.
+    console.log(JSON.stringify(decodeBencode(Buffer.from(bencodedValue),  true)));
+  } else if (command === "info") {
+    const filename = process.argv[3];
+    const info = torrentInfo(filename);
+    console.log("Tracker URL:", info.announce.toString());
+    console.log("Length:", info.info.length);
+    const bencodedInfo = encode(info.info);
+    const info2 = decodeBencode(bencodedInfo);
+    const infoHash = crypto.createHash('sha1').update(bencodedInfo).digest('hex');
+    console.log("Info Hash:", infoHash);
+  } else {
     throw new Error(`Unknown command ${command}`);
   }
 }
