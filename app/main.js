@@ -58,7 +58,6 @@ function torrentInfo(filename){
   return decoded;
 }
 
-
 //! main function 
 function main() {
   const command = process.argv[2];
@@ -73,9 +72,14 @@ function main() {
     console.log("Tracker URL:", info.announce.toString());
     console.log("Length:", info.info.length);
     const bencodedInfo = encode(info.info);
-    const info2 = decodeBencode(bencodedInfo);
     const infoHash = crypto.createHash('sha1').update(bencodedInfo).digest('hex');
     console.log("Info Hash:", infoHash);
+    console.log("Piece Length:",info.info['piece length']);
+    const pieces = info.info['pieces'];
+    console.log("Piece Hashes:");
+    for (let i = 0; i < pieces.length; i += 20) {
+      console.log(pieces.slice(i,i+20).toString('hex'));
+    }
   } else {
     throw new Error(`Unknown command ${command}`);
   }
