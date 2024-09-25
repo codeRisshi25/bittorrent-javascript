@@ -2,19 +2,23 @@ const process = require("process");
 const fs = require('fs');
 const crypto = require('crypto');
 const encode = require('./encode');
+const net = require('net');
 
 
-async function trackerRequest(tracker_url, length) {
-  const filename = process.argv[3];
-  const info = torrentInfo(filename);
-  const info_hash = infoHashGen(info);
 
+function urlInfoHash (info_hash){
   const xs = [];
   for (let i = 0; i < info_hash.length; i += 2) {
     xs.push(info_hash.slice(i, i + 2));
   }
   const url_encoded_info_hash = xs.map((x) => "%" + x).join("");
-
+  return url_encoded_info_hash;
+}
+async function trackerRequest(tracker_url, length) {
+  const filename = process.argv[3];
+  const info = torrentInfo(filename);
+  const info_hash = infoHashGen(info);
+  const url_encoded_info_hash = urlInfoHash(info_hash);
   const params = `info_hash=${url_encoded_info_hash}&peer_id=00112233445566778899&port=6881&uploaded=0&downloaded=0&left=${length}&compact=1`;
 
   try {
@@ -37,6 +41,41 @@ async function trackerRequest(tracker_url, length) {
   } catch (error) {
     console.error('Error fetching tracker URL:', error);
   }
+}
+
+async function peerRequest(peerUrl){
+  const pstr = 'BitTorrent protocol';
+  const pstrlen = Buffer.from([pstr.length]);
+  const reserved = Buffer.alloc(8, 0);
+  const info = torrentInfo(process.argv[3]);
+  const infoHash = Buffer.from(infoHashGen(info), 'hex');
+  const peerID = Buffer.from("00112233445566778899");
+
+  const client = new net.Socket();
+
+  const [peerHost, peerPort] = peerUrl.split(':');
+  
+  const handshake = Buffer.concat([
+    pstrlen,
+    Buffer.from(pstr),
+    reserved,
+    infoHash,
+    peerID
+  ]);
+
+  client.connect(peerPort,peerHost, ()=>{
+    console.log("connected to peer");
+    client.write(handshake);
+  });
+
+  client.on("data",(data)=>{
+    console.log(data.toString());
+    client.end();
+  })
+
+  client.on('error', (err) => {
+    console.error('Client error:', err);
+  });
 }
 
 //! function to decode the BenCoded Value
@@ -126,6 +165,9 @@ function main() {
     const filename = process.argv[3];
     const info = torrentInfo(filename);
     trackerRequest(info.announce.toString(),info.info['piece length']);
+  } else if (command == 'handshake'){
+    const peer = process.argv[4]
+    peerRequest(peer.toString());
   }
   else {
     throw new Error(`Unknown command ${command}`);
