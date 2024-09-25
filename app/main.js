@@ -4,8 +4,42 @@ const crypto = require('crypto');
 const encode = require('./encode');
 
 
-//! function to decode the BenCoded Value
+async function trackerRequest(tracker_url, length) {
+  const filename = process.argv[3];
+  const info = torrentInfo(filename);
+  const info_hash = infoHashGen(info);
 
+  const xs = [];
+  for (let i = 0; i < info_hash.length; i += 2) {
+    xs.push(info_hash.slice(i, i + 2));
+  }
+  const url_encoded_info_hash = xs.map((x) => "%" + x).join("");
+
+  const params = `info_hash=${url_encoded_info_hash}&peer_id=00112233445566778899&port=6881&uploaded=0&downloaded=0&left=${length}&compact=1`;
+
+  try {
+    const response = await fetch(`${tracker_url}?${params}`);
+    const arrayBuffer = await response.arrayBuffer();
+    const responseBuffer = Buffer.from(arrayBuffer);
+    const decoded = decodeBencode(Buffer.from(responseBuffer, 'binary'));
+    const peers = decoded.peers;
+    if (Buffer.isBuffer(peers)) {
+      const peerList = [];
+      for (let i = 0; i < peers.length; i += 6) {
+        const ip = peers.slice(i, i + 4).join('.');
+        const port = peers.readUInt16BE(i + 4);
+        peerList.push(`${ip}:${port}`);
+      }
+      console.log("Peers:", peerList.join(', '));
+    } else {
+      console.log("Peers:", peers);
+    }
+  } catch (error) {
+    console.error('Error fetching tracker URL:', error);
+  }
+}
+
+//! function to decode the BenCoded Value
 function decodeBencode(bencodedValue, needString = false) {
   let position = 0;
   function parse() {
@@ -58,6 +92,11 @@ function torrentInfo(filename){
   return decoded;
 }
 
+function infoHashGen(info){
+  const bencodedInfo = encode(info.info);
+  return infoHash = crypto.createHash('sha1').update(bencodedInfo).digest('hex');
+}
+
 //! main function 
 function main() {
   const command = process.argv[2];
@@ -69,18 +108,26 @@ function main() {
   } else if (command === "info") {
     const filename = process.argv[3];
     const info = torrentInfo(filename);
-    console.log("Tracker URL:", info.announce.toString());
+    // Read the .torrent file and print out the details
+    const tracker_url = info.announce.toString();
+    console.log("Tracker URL:", tracker_url);
     console.log("Length:", info.info.length);
-    const bencodedInfo = encode(info.info);
-    const infoHash = crypto.createHash('sha1').update(bencodedInfo).digest('hex');
+    const infoHash = infoHashGen(info);
     console.log("Info Hash:", infoHash);
-    console.log("Piece Length:",info.info['piece length']);
+    const pieceLength = info.info['piece length'];
+    console.log("Piece Length:",pieceLength);
     const pieces = info.info['pieces'];
     console.log("Piece Hashes:");
     for (let i = 0; i < pieces.length; i += 20) {
       console.log(pieces.slice(i,i+20).toString('hex'));
     }
-  } else {
+  } else if (command == 'peers'){
+    // Actually Connecting to the tracker server
+    const filename = process.argv[3];
+    const info = torrentInfo(filename);
+    trackerRequest(info.announce.toString(),info.info['piece length']);
+  }
+  else {
     throw new Error(`Unknown command ${command}`);
   }
 }
