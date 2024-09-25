@@ -69,7 +69,7 @@ async function peerRequest(peerUrl){
   });
 
   client.on("data",(data)=>{
-    console.log(data.toString());
+    console.log("Peer ID:",data.toString('hex').slice(-40));
     client.end();
   })
 
